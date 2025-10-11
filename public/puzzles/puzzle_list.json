@@ -1,0 +1,50 @@
+[
+    {
+        "id": "amsterdam_easy",
+        "name": "Amsterdam (Easy)",
+        "difficulty": "easy",
+        "zipPath": "/puzzles/amsterdam_5x8.zip"
+    },
+    {
+        "id": "princeton_easy",
+        "name": "Princeton (Easy)",
+        "difficulty": "easy",
+        "zipPath": "/puzzles/princeton_6x10.zip"
+    },
+    {
+        "id": "fox_medium",
+        "name": "Mountain (Medium)",
+        "difficulty": "medium",
+        "zipPath": "/puzzles/fox_8x12.zip"
+    },
+    {
+        "id": "kilimanjaro_medium",
+        "name": "Mountain (Medium)",
+        "difficulty": "medium",
+        "zipPath": "/puzzles/kilimanjaro_7x13.zip"
+    },
+    {
+        "id": "mountain_hard",
+        "name": "Mountain (Hard)",
+        "difficulty": "hard",
+        "zipPath": "/puzzles/mountain_7x17.zip"
+    },
+    {
+        "id": "foggy_forest_hard",
+        "name": "Foggy Forest (Hard)",
+        "difficulty": "hard",
+        "zipPath": "/puzzles/foggy_forest_8x15.zip"
+    },
+    {
+        "id": "swiss_alps_extra",
+        "name": "Swiss Alps (Extra Hard)",
+        "difficulty": "extra",
+        "zipPath": "/puzzles/swiss_alps_10x20.zip"
+    },
+    {
+        "id": "everest_extra",
+        "name": "Everest (Extra Hard)",
+        "difficulty": "extra",
+        "zipPath": "/puzzles/everest_15x25.zip"
+    }
+]

@@ -1,128 +1,124 @@
-import JSZip from "jszip";
-import { naturalCompare } from "./naturalSort.js";
+// src/utils/zip.js
+import { unzip } from "unzipit";
 
-// Accept only real image file extensions
-const IMAGE_RE = /\.(png|jpe?g|webp|gif)$/i;
-
-// Ignore common junk/metadata files and folders in zips
-const IGNORE_NAME_RE =
-  /(^|\/)(__macosx|\.ds_store|thumbs\.db|icon\r|readme(\.txt|\.md)?|license(\.txt|\.md)?)/i;
-
-/** Parse row/col from filename.
- * Supported examples:
- *   r3_c7.png
- *   row3_col7.jpg
- *   3x7.jpeg
- *   3-7.png
- *   (3,7).png
+/**
+ * Read a ZIP File/Blob, return tiles:
+ *   [{ id, name, dataUrl, row?, col? }]
+ * Supports images in subfolders and ignores __MACOSX, hidden files.
  */
-export function parseIndicesFromFilename(name) {
-  const s = name.toLowerCase();
-  let m;
-  if ((m = s.match(/r\s*(\d+)\s*[_-]?\s*c\s*(\d+)/)))
-    return { row: +m[1], col: +m[2] };
-  if ((m = s.match(/row\s*(\d+)\s*[_-]?\s*col\s*(\d+)/)))
-    return { row: +m[1], col: +m[2] };
-  if ((m = s.match(/\((\d+)\s*,\s*(\d+)\)/))) return { row: +m[1], col: +m[2] };
-  if ((m = s.match(/(\d+)\s*[xX_-]\s*(\d+)/)))
-    return { row: +m[1], col: +m[2] };
-  return null;
-}
+export async function parseZipToTiles(fileOrBlob) {
+  // Safari sometimes gives plain Blob; both are OK.
+  const ab = await fileOrBlob.arrayBuffer();
+  const { entries } = await unzip(ab);
 
-/** If filenames are 1-based (no zero appears), shift all to 0-based. */
-function normalizeIndexBaseToZero(tiles) {
-  const withIdx = tiles.filter((t) => t.row != null && t.col != null);
-  if (!withIdx.length) return;
-  const minRow = Math.min(...withIdx.map((t) => t.row));
-  const minCol = Math.min(...withIdx.map((t) => t.col));
-  if (minRow >= 1 && minCol >= 1) {
-    for (const t of withIdx) {
-      t.row -= 1;
-      t.col -= 1;
+  const imageExt = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+  const tiles = [];
+
+  const toExt = (name) => {
+    const i = name.lastIndexOf(".");
+    return i >= 0 ? name.slice(i).toLowerCase() : "";
+  };
+
+  // Turn an entry into a data URL
+  const entryToDataUrl = async (entry) => {
+    const blob = await entry.blob();
+    const reader = new FileReader();
+    const p = new Promise((resolve, reject) => {
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+    });
+    reader.readAsDataURL(blob);
+    return p;
+  };
+
+  for (const [fullName, entry] of Object.entries(entries)) {
+    // Skip folders, macOS junk, hidden files
+    if (entry.isDirectory) continue;
+    if (fullName.startsWith("__MACOSX/")) continue;
+
+    const ext = toExt(fullName);
+    if (!imageExt.has(ext)) continue;
+
+    const base = fullName.split("/").pop() || fullName; // strip folders
+    const dataUrl = await entryToDataUrl(entry);
+
+    // Optional: parse row/col indices if present in filename:
+    // patterns like: tile_r3_c5.png OR r3c5.png OR _3x5_14.png
+    let row = null,
+      col = null;
+
+    // r3_c5
+    let m = base.match(/(?:^|[_-])r(\d+)[_\-]?c(\d+)(?:[^0-9]|$)/i);
+    if (m) {
+      row = parseInt(m[1], 10);
+      col = parseInt(m[2], 10);
+    } else {
+      // 3-5 or 3x5 tokens near the name
+      m = base.match(/(?:^|[_-])(\d+)[x\-](\d+)(?:[^0-9]|$)/i);
+      if (m) {
+        row = parseInt(m[1], 10);
+        col = parseInt(m[2], 10);
+      }
     }
-  }
-}
 
-/** Deduplicate by (row,col); drop negatives. */
-function dedupeByCoord(tiles) {
-  const seen = new Set();
-  const out = [];
-  for (const t of tiles) {
-    if (t.row == null || t.col == null) continue;
-    if (t.row < 0 || t.col < 0) continue;
-    const key = `${t.row},${t.col}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(t);
-  }
-  return out;
-}
-
-/** Infer grid dimensions from tiles if every tile has indices. */
-export function inferGridFromTiles(tiles) {
-  const withIdx = tiles.filter((t) => t.row != null && t.col != null);
-  if (withIdx.length === tiles.length && tiles.length > 0) {
-    const rows = Math.max(...withIdx.map((t) => t.row)) + 1;
-    const cols = Math.max(...withIdx.map((t) => t.col)) + 1;
-    return { rows, cols, source: "filenames" };
-  }
-  return { rows: null, cols: null, source: "manual" };
-}
-
-/** Read a .zip File -> [{ id, name, dataUrl, row, col }, ...]
- *  Strict mode:
- *   - Only include images whose filenames encode row/col
- *   - Normalize 1-based -> 0-based
- *   - Deduplicate per (row,col)
- */
-export async function parseZipToTiles(file) {
-  if (!file) return [];
-
-  const buf = await file.arrayBuffer();
-  const zip = await JSZip.loadAsync(buf);
-
-  // Candidate image entries (filtered + stable order)
-  const entries = Object.values(zip.files)
-    .filter(
-      (f) => !f.dir && IMAGE_RE.test(f.name) && !IGNORE_NAME_RE.test(f.name)
-    )
-    .sort((a, b) => naturalCompare(a.name, b.name));
-
-  let idCounter = 0;
-  const candidates = [];
-
-  for (const f of entries) {
-    // Must have indices in filename
-    const idx = parseIndicesFromFilename(f.name);
-    if (!idx) continue;
-
-    // Read as Data URL (Safari-friendly with many images)
-    const arr = await f.async("uint8array");
-    const lower = f.name.toLowerCase();
-    let type = "image/png";
-    if (/\.(jpe?g)$/.test(lower)) type = "image/jpeg";
-    else if (/\.webp$/.test(lower)) type = "image/webp";
-    else if (/\.gif$/.test(lower)) type = "image/gif";
-    const blob = new Blob([arr], { type });
-
-    const dataUrl = await new Promise((res) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result);
-      r.readAsDataURL(blob);
-    });
-
-    candidates.push({
-      id: `t${idCounter++}`,
-      name: f.name.split("/").pop(),
+    tiles.push({
+      id: crypto.randomUUID(),
+      name: base,
       dataUrl,
-      row: idx.row,
-      col: idx.col,
+      row: Number.isFinite(row) ? row : null,
+      col: Number.isFinite(col) ? col : null,
     });
   }
 
-  // Normalize & dedupe
-  normalizeIndexBaseToZero(candidates);
-  const tiles = dedupeByCoord(candidates);
+  // Natural-ish sort by name so Auto-solve and palette feel stable
+  tiles.sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true })
+  );
 
   return tiles;
+}
+
+/**
+ * Try to infer grid size:
+ * 1) If many tiles carry row/col, use max(row)+1, max(col)+1
+ * 2) If ZIP filename encodes AxB (e.g., ..._5x8.zip) and count matches, use that
+ * 3) Fallback to near-square from count
+ */
+export function inferGridFromTiles(tiles, zipFileName = "") {
+  let rows = null,
+    cols = null,
+    source = "fallback";
+
+  // 1) From tile indices
+  const withIdx = tiles.filter((t) => t.row != null && t.col != null);
+  if (withIdx.length >= Math.max(tiles.length * 0.6, 10)) {
+    rows = Math.max(...withIdx.map((t) => t.row)) + 1;
+    cols = Math.max(...withIdx.map((t) => t.col)) + 1;
+    source = "indices";
+    return { rows, cols, source };
+  }
+
+  // 2) From ZIP name like *_5x8.zip
+  const m = zipFileName.match(/(\d+)[xX](\d+)/);
+  if (m) {
+    const R = parseInt(m[1], 10);
+    const C = parseInt(m[2], 10);
+    if (R > 0 && C > 0 && R * C >= tiles.length * 0.9) {
+      rows = R;
+      cols = C;
+      source = "filename";
+      return { rows, cols, source };
+    }
+  }
+
+  // 3) Near-square fallback
+  const n = tiles.length || 0;
+  if (n > 0) {
+    const root = Math.floor(Math.sqrt(n));
+    rows = root;
+    cols = Math.ceil(n / root);
+  } else {
+    rows = cols = 0;
+  }
+  return { rows, cols, source };
 }
