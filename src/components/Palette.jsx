@@ -9,7 +9,6 @@ export default function Palette({
   const onDragStart = (e, id) => {
     e.dataTransfer.setData("text/plain", id);
     e.dataTransfer.effectAllowed = "move";
-    // Optional nicer preview (works with data: URLs)
     const t = getTile(id);
     if (t?.dataUrl) {
       const img = new Image();
@@ -19,7 +18,15 @@ export default function Palette({
   };
 
   return (
-    <div className="palette">
+    <div
+      className="palette"
+      // force a clean responsive grid of square tiles
+      style={{
+        display: "grid",
+        gap: 6,
+        gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))",
+      }}
+    >
       {palette.map((id) => {
         const t = getTile(id);
         const isSelected = id === selectedTileId;
@@ -33,8 +40,28 @@ export default function Palette({
             onDragStart={(e) => onDragStart(e, id)}
             onClick={() => onSelectTile(id)}
             title={t?.name}
+            style={{
+              aspectRatio: "1 / 1",
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              overflow: "hidden",
+              cursor: "grab",
+              background: "#fff",
+            }}
           >
-            {t && <img src={t.dataUrl} alt={t.name} />}
+            {t && (
+              <img
+                src={t.dataUrl}
+                alt={t.name}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "block",
+                  objectFit: "cover",
+                }}
+                draggable={false}
+              />
+            )}
           </div>
         );
       })}

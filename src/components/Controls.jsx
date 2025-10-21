@@ -13,6 +13,8 @@ export default function Controls({
   onCheck,
   onReset,
   onZipSelect,
+  // NEW:
+  onShuffle,
 }) {
   return (
     <div className="controls">
@@ -69,6 +71,12 @@ export default function Controls({
         <button className="btn" onClick={onClearBoard}>
           Clear Board
         </button>
+
+        {/* NEW: Shuffle the palette */}
+        <button className="btn" onClick={onShuffle}>
+          Shuffle Palette
+        </button>
+
         <button className="btn primary" onClick={onAutoSolve}>
           Auto-solve
         </button>

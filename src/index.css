@@ -1,68 +1,46 @@
+/* index.css (append these) */
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --grid-line: #d1d5db; /* gray */
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+/* Container that holds the CSS grid */
+.grid-wrapper {
+  position: relative;
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+/* The grid itself */
+.grid-inner {
+  position: relative;
+  display: grid;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* Draw lines exactly between cells using the --cell size */
+.grid-inner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  /* vertical and horizontal lines */
+  background-image: repeating-linear-gradient(
+      to right,
+      transparent 0,
+      transparent var(--cell),
+      var(--grid-line) var(--cell),
+      var(--grid-line) calc(var(--cell) + 1px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent var(--cell),
+      var(--grid-line) var(--cell),
+      var(--grid-line) calc(var(--cell) + 1px)
+    );
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+/* Optional: adjust hint text inside empty cells */
+.cell .hint {
+  font-size: 12px;
+  color: #9ca3af;
 }

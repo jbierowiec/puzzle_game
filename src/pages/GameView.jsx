@@ -56,6 +56,16 @@ export default function GameView({ difficulty = "easy" }) {
     );
   }, [puzzles, difficulty]);
 
+  // --------- NEW: Shuffle helper ----------
+  const shuffle = (arr) => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+
   const handleZip = async (file) => {
     try {
       const loadedTiles = await parseZipToTiles(file);
@@ -85,7 +95,8 @@ export default function GameView({ difficulty = "easy" }) {
       setRows(R);
       setCols(C);
       setGrid(Array.from({ length: R }, () => Array(C).fill(null)));
-      setPalette(loadedTiles.map((t) => t.id));
+      // shuffle the palette for challenge
+      setPalette(shuffle(loadedTiles.map((t) => t.id)));
       setSelectedTileId(null);
       showToast(`Loaded ${R}×${C} puzzle.`);
     } catch {
@@ -93,7 +104,6 @@ export default function GameView({ difficulty = "easy" }) {
     }
   };
 
-  // inside GameView.jsx
   const loadDefaultPuzzle = async (p) => {
     try {
       const res = await fetch(p.zipPath, { cache: "no-store" });
@@ -122,7 +132,8 @@ export default function GameView({ difficulty = "easy" }) {
 
   const buildGrid = () => {
     setGrid(Array.from({ length: rows }, () => Array(cols).fill(null)));
-    setPalette(tiles.map((t) => t.id));
+    // shuffle visible palette again on new board
+    setPalette(shuffle(tiles.map((t) => t.id)));
     setSelectedTileId(null);
   };
   const clearBoard = () => buildGrid();
@@ -202,15 +213,13 @@ export default function GameView({ difficulty = "easy" }) {
     return "";
   };
 
-  // Optional preview: if your JSON has preview images at p.preview (e.g. /puzzles/previews/<id>.jpg)
   const previewSrc = (p) => p.preview || `/puzzles/previews/${p.id}.jpg`;
-
   const uploadDisabled = difficulty !== "custom";
 
   return (
     <>
       <nav className="navbar-full">
-        <div className="brand">🧩 Puzzle Challenge</div>
+        <div className="brand"><a href="/Welcome.jsx">🧩 Puzzle Challenge</a></div>
         <div className="grow"></div>
         <div className="muted">Hi, {playerName}</div>
         <div style={{ marginLeft: 12, marginRight: 12 }}>Points: {points}</div>
@@ -302,6 +311,8 @@ export default function GameView({ difficulty = "easy" }) {
                   ? () => alert("Upload is only available in Custom mode.")
                   : handleZip
               }
+              // NEW: shuffle handler
+              onShuffle={() => setPalette((p) => shuffle(p))}
             />
             {uploadDisabled && (
               <div className="hint" style={{ marginTop: 6 }}>

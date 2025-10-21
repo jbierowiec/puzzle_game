@@ -1,3 +1,4 @@
+// Grid.jsx
 import React, { useLayoutEffect, useRef, useState } from "react";
 
 export default function Grid({
@@ -18,8 +19,8 @@ export default function Grid({
     if (!el || cols <= 0) return;
     const recompute = () => {
       const w = el.clientWidth;
-      const gap = 6;
-      const pad = 6 * 2;
+      const gap = 0; // 👈 no gaps; lines are drawn by overlay
+      const pad = 0;
       const maxCell = 72;
       const minCell = 16;
       const usable = Math.max(0, w - pad - (cols - 1) * gap);
@@ -37,9 +38,11 @@ export default function Grid({
       <div
         className="grid-inner"
         style={{
+          // size of the cells exposed to CSS via a var
+          ["--cell"]: `${cellPx}px`,
           gridTemplateColumns: `repeat(${cols}, var(--cell))`,
           gridTemplateRows: `repeat(${rows}, var(--cell))`,
-          ["--cell"]: `${cellPx}px`,
+          gap: 0, // 👈 important
         }}
         onDragOver={onAllowDrop}
       >
@@ -56,9 +59,25 @@ export default function Grid({
                 onDrop={(e) => onDropToCell(e, r, c)}
                 onClick={() => onCellClick(r, c)}
                 title={`(${r}, ${c})`}
+                style={{
+                  width: "var(--cell)",
+                  height: "var(--cell)",
+                  overflow: "hidden",
+                  border: "0", // 👈 no per-cell borders
+                }}
               >
                 {t ? (
-                  <img src={t.dataUrl} alt={t?.name} />
+                  <img
+                    src={t.dataUrl}
+                    alt={t?.name}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: "block",
+                      objectFit: "cover",
+                    }}
+                    draggable={false}
+                  />
                 ) : (
                   <span className="hint">
                     {r},{c}
