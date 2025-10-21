@@ -1,9 +1,33 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Controls from "../components/Controls.jsx";
 import Palette from "../components/Palette.jsx";
 import Grid from "../components/Grid.jsx";
 import { parseZipToTiles, inferGridFromTiles } from "../utils/zip.js";
 import { naturalCompare } from "../utils/naturalSort.js";
+
+/* ------------ helpers ------------- */
+const fmtTime = (ms) => {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  const h = Math.floor(m / 60);
+  const mm = (m % 60).toString().padStart(2, "0");
+  const ss = r.toString().padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+};
+const shuffle = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+/* per-user points in localStorage */
+const pointsKey = (name) => `points:${name}`;
+/* per-puzzle leaderboard key in localStorage */
+const lbKey = (puzzleId, rows, cols) =>
+  `leaderboard:${puzzleId || "custom"}:${rows}x${cols}`;
 
 export default function GameView({ difficulty = "easy" }) {
   const [theme, setTheme] = useState(
@@ -17,21 +41,55 @@ export default function GameView({ difficulty = "easy" }) {
   const [palette, setPalette] = useState([]);
   const [toast, setToast] = useState(null);
   const [selectedTileId, setSelectedTileId] = useState(null);
-  const [points, setPoints] = useState(
-    () => Number(localStorage.getItem("points")) || 0
-  );
+
+  // --- points are per user; initialize below in useEffect
+  const [points, setPoints] = useState(0);
+
   const [selectedPuzzle, setSelectedPuzzle] = useState(null);
   const [puzzles, setPuzzles] = useState([]);
 
+  // timer
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [running, setRunning] = useState(false);
+  const tickRef = useRef(null);
+  const startRef = useRef(0);
+  const hasPlacedRef = useRef(false); // first placement flag
+
+  // leaderboard modal/display
+  const [justSolved, setJustSolved] = useState(null); // {rank, total, ms}
+
+  // Player name is still read from localStorage, as in your current app
   const playerName = useMemo(
     () => localStorage.getItem("playerName") || "Player",
     []
   );
 
+  /* -------------- THEME -------------- */
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  /* -------------- INITIALIZE PER-USER POINTS -------------- */
+  useEffect(() => {
+    // if no points exist for this user, seed with 5
+    const key = pointsKey(playerName);
+    const existing = localStorage.getItem(key);
+    if (existing == null) {
+      localStorage.setItem(key, "5");
+      setPoints(5);
+    } else {
+      setPoints(Math.max(0, Number(existing) || 0));
+    }
+  }, [playerName]);
+
+  /* -------------- LOAD CATALOG -------------- */
+  useEffect(() => {
+    fetch("/puzzles/puzzle_list.json")
+      .then((r) => r.json())
+      .then(setPuzzles)
+      .catch(() => showToast("Failed to load puzzle list."));
+  }, []);
 
   const showToast = (m) => {
     setToast(m);
@@ -41,35 +99,43 @@ export default function GameView({ difficulty = "easy" }) {
 
   const tileById = (id) => tiles.find((t) => t.id === id);
 
-  // Load catalog
-  useEffect(() => {
-    fetch("/puzzles/puzzle_list.json")
-      .then((r) => r.json())
-      .then(setPuzzles)
-      .catch(() => showToast("Failed to load puzzle list."));
-  }, []);
-
-  const filtered = useMemo(() => {
+  const filtered = React.useMemo(() => {
     if (difficulty === "custom") return puzzles;
     return puzzles.filter(
       (p) => (p.difficulty || "").toLowerCase() === difficulty
     );
   }, [puzzles, difficulty]);
 
-  // --------- NEW: Shuffle helper ----------
-  const shuffle = (arr) => {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
+  /* -------------- TIMER CONTROLS -------------- */
+  const startTimer = () => {
+    if (running) return;
+    setRunning(true);
+    setElapsedMs(0);
+    startRef.current = performance.now();
+    tickRef.current = setInterval(() => {
+      setElapsedMs(performance.now() - startRef.current);
+    }, 200);
+  };
+  const stopTimer = () => {
+    if (!running) return;
+    clearInterval(tickRef.current);
+    tickRef.current = null;
+    setRunning(false);
+    setElapsedMs(performance.now() - startRef.current);
+  };
+  const resetTimer = () => {
+    clearInterval(tickRef.current);
+    tickRef.current = null;
+    setRunning(false);
+    setElapsedMs(0);
+    startRef.current = 0;
   };
 
+  /* -------------- ZIP / LOAD -------------- */
   const handleZip = async (file) => {
     try {
       const loadedTiles = await parseZipToTiles(file);
-      // --- Normalize filenames that are 1-based (1,1 top-left) to 0-based (0,0) ---
+      // normalize 1-based filenames to 0-based
       {
         const withIdx = loadedTiles.filter(
           (t) => t.row != null && t.col != null
@@ -95,9 +161,11 @@ export default function GameView({ difficulty = "easy" }) {
       setRows(R);
       setCols(C);
       setGrid(Array.from({ length: R }, () => Array(C).fill(null)));
-      // shuffle the palette for challenge
       setPalette(shuffle(loadedTiles.map((t) => t.id)));
       setSelectedTileId(null);
+      hasPlacedRef.current = false;
+      resetTimer();
+      setJustSolved(null);
       showToast(`Loaded ${R}×${C} puzzle.`);
     } catch {
       showToast("Failed to read ZIP.");
@@ -132,14 +200,31 @@ export default function GameView({ difficulty = "easy" }) {
 
   const buildGrid = () => {
     setGrid(Array.from({ length: rows }, () => Array(cols).fill(null)));
-    // shuffle visible palette again on new board
     setPalette(shuffle(tiles.map((t) => t.id)));
     setSelectedTileId(null);
+    hasPlacedRef.current = false;
+    resetTimer();
+    setJustSolved(null);
   };
   const clearBoard = () => buildGrid();
 
+  /* -------------- AUTO-SOLVE (cost 5 points) -------------- */
+  const spendPoints = (n) => {
+    const key = pointsKey(playerName);
+    const newPts = Math.max(0, points - n);
+    setPoints(newPts);
+    localStorage.setItem(key, String(newPts));
+  };
+
+  const grantPoint = (n = 1) => {
+    const key = pointsKey(playerName);
+    const newPts = points + n;
+    setPoints(newPts);
+    localStorage.setItem(key, String(newPts));
+  };
+
   const autoSolve = () => {
-    if (points < 5) return showToast("Earn 5 points to unlock Auto-Solve!");
+    if (points < 5) return showToast("Need 5 points to Auto-solve.");
     if (!tiles.length) return;
     const ordered = [...tiles].sort((a, b) => naturalCompare(a.name, b.name));
     let k = 0;
@@ -149,9 +234,32 @@ export default function GameView({ difficulty = "easy" }) {
     setGrid(layout);
     setPalette([]);
     setSelectedTileId(null);
-    setPoints(0);
-    localStorage.setItem("points", "0");
-    showToast("Auto-solved! Points reset to 0.");
+    spendPoints(5); // 👈 deduct 5, not reset to 0
+    stopTimer();
+    showToast("Auto-solved (−5 points).");
+  };
+
+  /* -------------- CHECK / SAVE RESULT -------------- */
+  const recordLeaderboard = (ms) => {
+    const key = lbKey(selectedPuzzle?.id, rows, cols);
+    const list = JSON.parse(localStorage.getItem(key) || "[]");
+    list.push({
+      name: playerName,
+      ms,
+      when: Date.now(),
+    });
+    // sort best (lowest time) first and trim (keep top 100)
+    list.sort((a, b) => a.ms - b.ms);
+    if (list.length > 100) list.length = 100;
+    localStorage.setItem(key, JSON.stringify(list));
+    // find rank of this run
+    const rank = list.findIndex(
+      (r) =>
+        r.name === playerName &&
+        r.ms === ms &&
+        Math.abs(r.when - Date.now()) < 2000
+    );
+    return { rank: rank >= 0 ? rank + 1 : null, total: list.length };
   };
 
   const checkSolution = () => {
@@ -165,19 +273,30 @@ export default function GameView({ difficulty = "easy" }) {
         const t = tileById(id);
         if (t && t.row === r && t.col === c) correct++;
       }
+
     if (correct === rows * cols) {
-      const newPoints = points + 1;
-      setPoints(newPoints);
-      localStorage.setItem("points", String(newPoints));
-      showToast(`Puzzle solved! +1 point (${newPoints} total)`);
+      stopTimer();
+      grantPoint(1); // +1 for a solve
+      const { rank, total } = recordLeaderboard(elapsedMs);
+      setJustSolved({ rank, total, ms: elapsedMs });
+      showToast(`Solved in ${fmtTime(elapsedMs)}! +1 point`);
     } else {
       showToast(`Scored ${correct}/${rows * cols}`);
     }
   };
 
+  /* -------------- PLACE TILE (start timer on first place) -------------- */
   const attemptPlace = (tileId, r, c) => {
     const t = tileById(tileId);
     if (!t) return;
+
+    // start the clock on the very first attempt (correct or incorrect)
+    if (!hasPlacedRef.current) {
+      hasPlacedRef.current = true;
+      startTimer();
+    }
+
+    // handle assisted mode feedback
     if (
       assisted &&
       t.row != null &&
@@ -186,6 +305,8 @@ export default function GameView({ difficulty = "easy" }) {
     ) {
       return showToast(`Incorrect placement for (${r},${c}).`);
     }
+
+    // successful placement
     setGrid((g) => {
       const copy = g.map((row) => row.slice());
       const existing = copy[r][c];
@@ -216,13 +337,19 @@ export default function GameView({ difficulty = "easy" }) {
   const previewSrc = (p) => p.preview || `/puzzles/previews/${p.id}.jpg`;
   const uploadDisabled = difficulty !== "custom";
 
+  /* -------------- UI -------------- */
   return (
     <>
       <nav className="navbar-full">
-        <div className="brand"><a href="/Welcome.jsx">🧩 Puzzle Challenge</a></div>
+        <div className="brand">
+          <a href="/Welcome.jsx">🧩 Puzzle Challenge</a>
+        </div>
         <div className="grow"></div>
         <div className="muted">Hi, {playerName}</div>
         <div style={{ marginLeft: 12, marginRight: 12 }}>Points: {points}</div>
+        <div className="muted" style={{ marginRight: 12 }}>
+          Time: {fmtTime(elapsedMs)}
+        </div>
         <button
           className="btn"
           onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
@@ -304,6 +431,9 @@ export default function GameView({ difficulty = "easy" }) {
                 setCols(0);
                 setSelectedTileId(null);
                 setSelectedPuzzle(null);
+                hasPlacedRef.current = false;
+                resetTimer();
+                setJustSolved(null);
                 showToast("Reset.");
               }}
               onZipSelect={
@@ -311,8 +441,6 @@ export default function GameView({ difficulty = "easy" }) {
                   ? () => alert("Upload is only available in Custom mode.")
                   : handleZip
               }
-              // NEW: shuffle handler
-              onShuffle={() => setPalette((p) => shuffle(p))}
             />
             {uploadDisabled && (
               <div className="hint" style={{ marginTop: 6 }}>
@@ -360,9 +488,69 @@ export default function GameView({ difficulty = "easy" }) {
             </div>
           </section>
 
+          {/* Leaderboard after a solve */}
+          {justSolved && (
+            <div className="panel" style={{ marginTop: 12 }}>
+              <h3 style={{ marginTop: 0 }}>
+                Leaderboard — {selectedPuzzle?.name || "Custom"} ({rows}×{cols})
+              </h3>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Your time: <strong>{fmtTime(justSolved.ms)}</strong> · Rank{" "}
+                <strong>{justSolved.rank ?? "—"}</strong> of {justSolved.total}
+              </p>
+              <Leaderboard
+                puzzleId={selectedPuzzle?.id}
+                rows={rows}
+                cols={cols}
+              />
+            </div>
+          )}
+
           {toast && <div className="toast">{toast}</div>}
         </main>
       </div>
     </>
+  );
+}
+
+/* simple inline leaderboard component (reads localStorage) */
+function Leaderboard({ puzzleId, rows, cols }) {
+  const key = lbKey(puzzleId, rows, cols);
+  const [rowsData, setRowsData] = useState([]);
+
+  useEffect(() => {
+    try {
+      const list = JSON.parse(localStorage.getItem(key) || "[]");
+      setRowsData(list.slice(0, 20)); // top 20
+    } catch {
+      setRowsData([]);
+    }
+  }, [key]);
+
+  if (!rowsData.length) return <div className="muted">No entries yet.</div>;
+
+  return (
+    <div className="table" style={{ overflowX: "auto" }}>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Player</th>
+            <th>Time</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rowsData.map((r, i) => (
+            <tr key={r.when}>
+              <td>{i + 1}</td>
+              <td>{r.name}</td>
+              <td>{fmtTime(r.ms)}</td>
+              <td>{new Date(r.when).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

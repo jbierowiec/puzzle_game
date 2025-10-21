@@ -44,3 +44,37 @@
   font-size: 12px;
   color: #9ca3af;
 }
+
+/* Pause effect: blur the playable area and disable interactions */
+.stage.paused .grid-inner img,
+.stage.paused .palette img {
+  filter: blur(4px) brightness(0.85);
+}
+
+.stage.paused .grid-inner,
+.stage.paused .palette {
+  pointer-events: none; /* block clicks & drag/drop */
+}
+
+/* A soft overlay that says "Paused" */
+.stage {
+  position: relative;
+}
+.stage .paused-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 1.25rem;
+  color: #111827;
+  background: rgba(255,255,255,0.35);
+  backdrop-filter: blur(2px);
+  border-radius: 10px; /* matches your panels */
+  z-index: 2;
+  pointer-events: none;
+}
+[data-theme="dark"] .stage .paused-overlay {
+  color: #e5e7eb;
+  background: rgba(17,24,39,0.35);
+}
