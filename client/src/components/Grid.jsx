@@ -19,7 +19,7 @@ export default function Grid({
     if (!el || cols <= 0) return;
     const recompute = () => {
       const w = el.clientWidth;
-      const gap = 0; // 👈 no gaps; lines are drawn by overlay
+      const gap = 0;
       const pad = 0;
       const maxCell = 72;
       const minCell = 16;
@@ -38,11 +38,10 @@ export default function Grid({
       <div
         className="grid-inner"
         style={{
-          // size of the cells exposed to CSS via a var
           ["--cell"]: `${cellPx}px`,
           gridTemplateColumns: `repeat(${cols}, var(--cell))`,
           gridTemplateRows: `repeat(${rows}, var(--cell))`,
-          gap: 0, // 👈 important
+          gap: 0,
         }}
         onDragOver={onAllowDrop}
       >
@@ -63,7 +62,7 @@ export default function Grid({
                   width: "var(--cell)",
                   height: "var(--cell)",
                   overflow: "hidden",
-                  border: "0", // 👈 no per-cell borders
+                  border: "0",
                 }}
               >
                 {t ? (

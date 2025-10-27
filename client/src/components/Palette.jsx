@@ -20,7 +20,6 @@ export default function Palette({
   return (
     <div
       className="palette"
-      // force a clean responsive grid of square tiles
       style={{
         display: "grid",
         gap: 6,
@@ -49,10 +48,11 @@ export default function Palette({
               background: "#fff",
             }}
           >
-            {t && (
+            {t?.dataUrl && (
               <img
                 src={t.dataUrl}
                 alt={t.name}
+                onError={(e) => (e.currentTarget.style.display = "none")} // ← hide broken
                 style={{
                   width: "100%",
                   height: "100%",

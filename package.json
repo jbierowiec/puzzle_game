@@ -1,30 +1,22 @@
 {
-  "name": "puzzle-solver",
+  "name": "puzzle_game",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "dev": "npm-run-all --parallel dev:client dev:server",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "node server/index.js",
+    "db:migrate": "node server/db/migrate.mjs",
+    "build": "cd client && npm run build",
+    "start": "node server/index.js"
   },
   "dependencies": {
-    "jszip": "^3.10.1",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2",
-    "unzipit": "^1.4.3"
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.36.0",
-    "@types/react": "^19.1.16",
-    "@types/react-dom": "^19.1.9",
-    "@vitejs/plugin-react": "^5.0.4",
-    "eslint": "^9.36.0",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.22",
-    "globals": "^16.4.0",
-    "vite": "^7.1.9"
+    "npm-run-all": "^4.1.5"
   }
 }

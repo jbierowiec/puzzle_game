@@ -13,7 +13,6 @@ export default function Controls({
   onCheck,
   onReset,
   onZipSelect,
-  // NEW:
   onShuffle,
 }) {
   return (
@@ -72,7 +71,6 @@ export default function Controls({
           Clear Board
         </button>
 
-        {/* NEW: Shuffle the palette */}
         <button className="btn" onClick={onShuffle}>
           Shuffle Palette
         </button>

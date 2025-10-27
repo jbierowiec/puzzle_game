@@ -83,12 +83,21 @@ export default function GameView({ difficulty = "easy" }) {
     }
   }, [playerName]);
 
-  /* -------------- LOAD CATALOG -------------- */
+  /* -------------- LOAD CATALOG (from API) -------------- */
   useEffect(() => {
-    fetch("/puzzles/puzzle_list.json")
-      .then((r) => r.json())
-      .then(setPuzzles)
-      .catch(() => showToast("Failed to load puzzle list."));
+    const fetchPuzzles = async () => {
+      try {
+        const res = await fetch("/api/puzzles");
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        const data = await res.json();
+        setPuzzles(Array.isArray(data) ? data : []); // ✅ ensure array
+      } catch (err) {
+        console.error("Failed to fetch puzzles:", err);
+        setPuzzles([]); // fallback
+      }
+    };
+
+    fetchPuzzles();
   }, []);
 
   const showToast = (m) => {
@@ -99,12 +108,9 @@ export default function GameView({ difficulty = "easy" }) {
 
   const tileById = (id) => tiles.find((t) => t.id === id);
 
-  const filtered = React.useMemo(() => {
-    if (difficulty === "custom") return puzzles;
-    return puzzles.filter(
-      (p) => (p.difficulty || "").toLowerCase() === difficulty
-    );
-  }, [puzzles, difficulty]);
+  const filtered = Array.isArray(puzzles)
+    ? puzzles.filter((p) => (p.difficulty || "").toLowerCase() === difficulty)
+    : [];
 
   /* -------------- TIMER CONTROLS -------------- */
   const startTimer = () => {
@@ -135,38 +141,44 @@ export default function GameView({ difficulty = "easy" }) {
   const handleZip = async (file) => {
     try {
       const loadedTiles = await parseZipToTiles(file);
-      // normalize 1-based filenames to 0-based
-      {
-        const withIdx = loadedTiles.filter(
-          (t) => t.row != null && t.col != null
-        );
-        if (withIdx.length) {
-          const minRow = Math.min(...withIdx.map((t) => t.row));
-          const minCol = Math.min(...withIdx.map((t) => t.col));
-          const hasZero = withIdx.some((t) => t.row === 0 || t.col === 0);
-          const looksOneBased = !hasZero && (minRow === 1 || minCol === 1);
-          if (looksOneBased) {
-            for (const t of loadedTiles) {
-              if (t.row != null) t.row -= 1;
-              if (t.col != null) t.col -= 1;
-            }
-          }
-        }
+      if (!loadedTiles.length) {
+        showToast("No tiles found in ZIP.");
+        return;
       }
-      if (!loadedTiles.length) return showToast("No images found in ZIP.");
+
       const inferred = inferGridFromTiles(loadedTiles);
       const R = inferred.rows ?? 0;
       const C = inferred.cols ?? 0;
-      setTiles(loadedTiles);
+      if (!R || !C) {
+        showToast("Could not infer rows/cols from filenames.");
+        return;
+      }
+
+      // keep only tiles within [0..R-1] × [0..C-1], and prefer first tile per (r,c)
+      const coordKey = (t) => `${t.row}:${t.col}`;
+      const seen = new Set();
+      const inBounds = [];
+      for (const t of loadedTiles) {
+        if (t.row < 0 || t.col < 0 || t.row >= R || t.col >= C) continue;
+        const k = coordKey(t);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        inBounds.push(t);
+      }
+
+      // enforce exactly R*C at most (if ZIP had extras)
+      const finalTiles = inBounds.slice(0, R * C);
+
+      setTiles(finalTiles);
       setRows(R);
       setCols(C);
       setGrid(Array.from({ length: R }, () => Array(C).fill(null)));
-      setPalette(shuffle(loadedTiles.map((t) => t.id)));
+      setPalette(finalTiles.map((t) => t.id)); // ← only valid, in-bounds tiles
       setSelectedTileId(null);
       hasPlacedRef.current = false;
       resetTimer();
       setJustSolved(null);
-      showToast(`Loaded ${R}×${C} puzzle.`);
+      showToast(`Loaded ${R}×${C} puzzle with ${finalTiles.length} tiles.`);
     } catch {
       showToast("Failed to read ZIP.");
     }
@@ -234,7 +246,7 @@ export default function GameView({ difficulty = "easy" }) {
     setGrid(layout);
     setPalette([]);
     setSelectedTileId(null);
-    spendPoints(5); // 👈 deduct 5, not reset to 0
+    spendPoints(5); // deduct 5
     stopTimer();
     showToast("Auto-solved (−5 points).");
   };
@@ -248,11 +260,9 @@ export default function GameView({ difficulty = "easy" }) {
       ms,
       when: Date.now(),
     });
-    // sort best (lowest time) first and trim (keep top 100)
     list.sort((a, b) => a.ms - b.ms);
     if (list.length > 100) list.length = 100;
     localStorage.setItem(key, JSON.stringify(list));
-    // find rank of this run
     const rank = list.findIndex(
       (r) =>
         r.name === playerName &&
@@ -290,13 +300,11 @@ export default function GameView({ difficulty = "easy" }) {
     const t = tileById(tileId);
     if (!t) return;
 
-    // start the clock on the very first attempt (correct or incorrect)
     if (!hasPlacedRef.current) {
       hasPlacedRef.current = true;
       startTimer();
     }
 
-    // handle assisted mode feedback
     if (
       assisted &&
       t.row != null &&
@@ -306,7 +314,6 @@ export default function GameView({ difficulty = "easy" }) {
       return showToast(`Incorrect placement for (${r},${c}).`);
     }
 
-    // successful placement
     setGrid((g) => {
       const copy = g.map((row) => row.slice());
       const existing = copy[r][c];
@@ -441,6 +448,7 @@ export default function GameView({ difficulty = "easy" }) {
                   ? () => alert("Upload is only available in Custom mode.")
                   : handleZip
               }
+              onShuffle={() => setPalette((p) => shuffle(p))}
             />
             {uploadDisabled && (
               <div className="hint" style={{ marginTop: 6 }}>
